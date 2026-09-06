@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { SupabaseInterviewRepository } from "@/lib/adapters/repository/supabase-interview-repository";
-
+import { Badge } from "@/components/ui/badge";
 export default async function InterviewsPage() {
   const { userId, redirectToSignIn } = await auth();
   if (!userId) return redirectToSignIn();
@@ -46,7 +46,9 @@ export default async function InterviewsPage() {
                 </p>
                 <p className="mt-1 text-xs text-zinc-400">
                   {new Date(interview.created_at).toLocaleString()} ·{" "}
-                  {interview.status}
+                  <Badge className="bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">
+                    {interview.status}
+                  </Badge>
                 </p>
               </div>
               <Link
