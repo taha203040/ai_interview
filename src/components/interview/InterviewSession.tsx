@@ -6,13 +6,24 @@ import type { TranscriptMessage } from "@/lib/adapters/voice/vapi-client";
 import type { DiagramEngine } from "@/lib/adapters/diagram/diagram-engine";
 import type { InterviewConfig } from "@/lib/interview/types";
 import { Whiteboard } from "./Whiteboard";
-
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 interface InterviewSessionProps extends InterviewConfig {
   interviewId: string;
 }
 
 type CallStatus = "idle" | "starting" | "active" | "ended";
-
+type Assessment = {
+  score: number;
+  keyStrengths: string[];
+  keyWeaknesses: string[];
+  summary: string;
+};
 export function InterviewSession({
   interviewId,
   role,
@@ -24,7 +35,7 @@ export function InterviewSession({
 
   const [status, setStatus] = useState<CallStatus>("idle");
   const [transcripts, setTranscripts] = useState<TranscriptMessage[]>([]);
-  const [assessment, setAssessment] = useState<string | null>(null);
+  const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -45,7 +56,7 @@ export function InterviewSession({
       onError: (e) => setError(String(e)),
     });
   }, [voice]);
-
+ 
   const transcriptText = useMemo(
     () => transcripts.map((t) => `${t.role}: ${t.transcript}`).join("\n"),
     [transcripts]
@@ -53,11 +64,15 @@ export function InterviewSession({
 
   const start = useCallback(async () => {
     if (!voice) {
-      setError("Vapi is not configured: NEXT_PUBLIC_VAPI_PUBLIC_KEY is missing.");
+      setError(
+        "Vapi is not configured: NEXT_PUBLIC_VAPI_PUBLIC_KEY is missing."
+      );
       return;
     }
     if (!assistantId) {
-      setError("Vapi is not configured: NEXT_PUBLIC_VAPI_ASSISTANT_ID is missing.");
+      setError(
+        "Vapi is not configured: NEXT_PUBLIC_VAPI_ASSISTANT_ID is missing."
+      );
       return;
     }
     setError(null);
@@ -72,51 +87,67 @@ export function InterviewSession({
     }
   }, [voice, assistantId, role, topic, skills]);
 
-  const endInterview = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      if (voice && status === "active") await voice.stop();
-      setStatus("ended");
+const endInterview = useCallback(async () => {
+  setBusy(true);
+  setError(null);
 
-      const diagram = engineRef.current?.toJSON();
-
-      const analyzeRes = await fetch("/api/interview/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: transcriptText }),
-      });
-      const analyzeJson = await analyzeRes.json();
-      if (!analyzeRes.ok) {
-        throw new Error(analyzeJson.error ?? "Analysis failed");
-      }
-      setAssessment(analyzeJson.assessment ?? "");
-
-      const saveRes = await fetch("/api/interview/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          interviewId,
-          transcript: transcriptText,
-          assessment: analyzeJson.assessment,
-          diagram,
-          role,
-          topic,
-          skills,
-        }),
-      });
-      const saveJson = await saveRes.json();
-      if (!saveRes.ok) {
-        throw new Error(saveJson.error ?? "Save failed");
-      }
-      setSaved(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
+  try {
+    if (voice && status === "active") {
+      await voice.stop();
     }
-  }, [voice, status, transcriptText, interviewId]);
 
+    setStatus("ended");
+
+    const diagram = engineRef.current?.toJSON();
+
+    const analyzeRes = await fetch("/api/interview/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript: transcriptText,
+      }),
+    });
+
+    const analyzeJson = await analyzeRes.json();
+
+    if (!analyzeRes.ok) {
+      throw new Error(analyzeJson.error ?? "Analysis failed");
+    }
+
+    const parsedAssessment: Assessment =
+      typeof analyzeJson.assessment === "string"
+        ? JSON.parse(analyzeJson.assessment)
+        : analyzeJson.assessment;
+
+    setAssessment(parsedAssessment);
+
+    const saveRes = await fetch("/api/interview/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        interviewId,
+        transcript: transcriptText,
+        assessment: analyzeJson.assessment,
+        diagram,
+        role,
+        topic,
+        skills,
+      }),
+    });
+
+    const saveJson = await saveRes.json();
+
+    if (!saveRes.ok) {
+      throw new Error(saveJson.error ?? "Save failed");
+    }
+
+    setSaved(true);
+  } catch (e) {
+    setError(e instanceof Error ? e.message : String(e));
+  } finally {
+    setBusy(false);
+  }
+}, [voice, status, transcriptText, interviewId, role, topic, skills]);
   return (
     <div className="mx-auto w-full max-w-6xl p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -160,7 +191,7 @@ export function InterviewSession({
 
       {error && (
         <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-          {error}
+          {`${error}`}
         </div>
       )}
 
@@ -188,7 +219,7 @@ export function InterviewSession({
           <Whiteboard engineRef={engineRef} />
         </section>
       </div>
-
+      {/* 
       {assessment && (
         <section className="mt-6 rounded-xl border border-black/[.08] p-4 dark:border-white/[.08]">
           <h2 className="font-medium">Assessment</h2>
@@ -197,6 +228,132 @@ export function InterviewSession({
             <p className="mt-2 text-sm text-green-600">Saved to Supabase ✓</p>
           )}
         </section>
+      )} */}
+      {assessment && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Assessment</CardTitle>
+            <CardDescription>Technical interview evaluation</CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-6">
+            {/* Score */}
+            <div className="flex items-center gap-6">
+              <div className="relative flex size-28 items-center justify-center">
+                <svg
+                  className="absolute size-28 -rotate-90"
+                  viewBox="0 0 100 100"
+                >
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="8"
+                    className="text-muted"
+                  />
+
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={`${assessment.score * 26.4} 264`}
+                    className="text-primary"
+                  />
+                </svg>
+
+                <div className="text-center">
+                  <div className="text-2xl font-bold">
+                    {assessment.score}
+                  </div>
+                  <div className="text-xs text-muted-foreground">/ 10</div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-semibold">Overall Score</h3>
+                <p className="text-sm text-muted-foreground">
+                  Based on your technical interview performance.
+                </p>
+              </div>
+            </div>
+
+            {/* Strengths / Weaknesses */}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Strengths */}
+              <Card className="border-green-500/20 bg-green-500/5">
+                <CardHeader>
+                  <CardTitle className="text-base text-green-600 dark:text-green-400">
+                    Key Strengths
+                  </CardTitle>
+                </CardHeader>
+
+                <CardContent>
+                  <ul className="space-y-2">
+                    {assessment.keyStrengths.map(
+                      (strength: string, index: number) => (
+                        <li
+                          key={index}
+                          className="rounded-md bg-green-500/10 p-3 text-sm"
+                        >
+                          {strength}
+                        </li>
+                      )
+                    )}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              {/* Weaknesses */}
+              <Card className="border-red-500/20 bg-red-500/5">
+                <CardHeader>
+                  <CardTitle className="text-base text-red-600 dark:text-red-400">
+                    Key Weaknesses
+                  </CardTitle>
+                </CardHeader>
+
+                <CardContent>
+                  <ul className="space-y-2">
+                    {assessment.keyWeaknesses.map(
+                      (weakness: string, index: number) => (
+                        <li
+                          key={index}
+                          className="rounded-md bg-red-500/10 p-3 text-sm"
+                        >
+                          {weakness}
+                        </li>
+                      )
+                    )}
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Summary */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Summary</CardTitle>
+              </CardHeader>
+
+              <CardContent>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {assessment.summary}
+                </p>
+              </CardContent>
+            </Card>
+
+            {saved && (
+              <p className="text-sm text-green-600">
+                Assessment saved to Supabase ✓
+              </p>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );
